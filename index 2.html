@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Among Us: Skeld Escape</title>
+    <style>
+        body {
+            margin: 0;
+            background: radial-gradient(circle at center, #0a0f1d 0%, #03050a 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 26px;
+            letter-spacing: 3px;
+            text-align: center;
+            color: #ff1c1c;
+            text-shadow: 0 0 10px rgba(255, 28, 28, 0.6);
+        }
+        #ui {
+            font-size: 16px;
+            margin-bottom: 12px;
+            background: rgba(15, 22, 39, 0.8);
+            padding: 8px 24px;
+            border-radius: 30px;
+            border: 2px solid #203354;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        #btnContainer {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .action-btn {
+            background: linear-gradient(135deg, #00ffcc 0%, #00b3ff 100%);
+            color: #03050a;
+            border: none;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 14px;
+            border-radius: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 255, 204, 0.4);
+            transition: all 0.2s ease;
+        }
+        .action-btn:active {
+            transform: scale(0.95);
+        }
+        #resetBtn {
+            background: linear-gradient(135deg, #ff5252 0%, #ff1744 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 23, 68, 0.4);
+            display: none;
+        }
+        #canvasContainer {
+            position: relative;
+            width: 95vw;
+            max-width: 850px;
+            aspect-ratio: 16 / 10;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            border: 4px solid #1a263d;
+            background-color: #03050a;
+            border-radius: 12px;
+            box-shadow: 0px 15px 40px rgba(0, 0, 0, 0.8);
+            box-sizing: border-box;
+        }
+        #joystickZone {
+            position: absolute;
+            bottom: 25px;
+            left: 25px;
+            width: 110px;
+            height: 110px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 3px solid rgba(0, 255, 204, 0.4);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+        #joystickKnob {
+            width: 44px;
+            height: 44px;
+            background: radial-gradient(circle at 30% 30%, #00ffcc, #009977);
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.6);
+            transition: transform 0.05s linear;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AMONG US: NAUFRAGIO</h1>
+    
+    <div id="btnContainer">
+        <button id="downloadBtn" class="action-btn" onclick="downloadGame()">📥 Descargar archivo index.html (1-Click)</button>
+        <button id="resetBtn" class="action-btn" onclick="resetGame()">🔄 Jugar de nuevo</button>
+    </div>
+
+    <div id="ui">
+        <div>Misiones: <span id="taskCount">0</span>/5</div>
+        <div id="status" style="color: #00ffcc; font-weight: bold;">¡Repara la nave!</div>
+    </div>
+    
+    <div id="canvasContainer">
+        <canvas id="gameCanvas" width="960" height="600"></canvas>
+        <div id="joystickZone">
+            <div id="joystickKnob"></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const taskCountEl = document.getElementById("taskCount");
+        const statusEl = document.getElementById("status");
+        const resetBtn = document.getElementById("resetBtn");
+        const joystickZone = document.getElementById("joystickZone");
+        const joystickKnob = document.getElementById("joystickKnob");
+
+        let tasksCompleted = 0;
+        let gameOver = false;
+        let gameWon = false;
+
+        // Jugador (Diseño detallado)
+        const player = { x: 120, y: 300, radius: 22, speed: 5, color: "#00d2ff", shadowColor: "#006699" };
+        // Impostor (Más rápido y agresivo)
+        const impostor = { x: 840, y: 300, radius: 23, speed: 2.5, color: "#ff1c1c", shadowColor: "#990000" };
+
+        // Habitaciones simuladas con paredes y sombras en 2.5D
+        const rooms = [
+            { name: "Administración", x: 50, y: 50, w: 220, h: 160, color: "#1b2234" },
+            { name: "Navegación", x: 680, y: 50, w: 230, h: 180, color: "#1b2234" },
+            { name: "Reactor", x: 50, y: 380, w: 200, h: 170, color: "#241926" },
+            { name: "Electricidad", x: 380, y: 220, w: 200, h: 160, color: "#222519" },
+            { name: "Escudos", x: 680, y: 380, w: 230, h: 170, color: "#192625" }
+        ];
+
+        // Tareas fijas dentro de cada habitación con diseño de motores/consolas
+        let tasks = [
+            { x: 160, y: 130, active: true, label: "Wires" },
+            { x: 790, y: 140, active: true, label: "Chart" },
+            { x: 150, y: 460, active: true, label: "Engine" },
+            { x: 480, y: 300, active: true, label: "Calibrate" },
+            { x: 790, y: 460, active: true, label: "Shields" }
+        ];
+
+        // Partículas del espacio hiperrealistas
+        const stars = [];
+        for (let i = 0; i < 70; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2.5 + 0.5,
+                brightness: Math.random()
+            });
+        }
+
+        // Teclado
+        const keys = {};
+        window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+        window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+        // Joystick Táctil avanzado para iPad
+        let isJoystickActive = false;
+        let joystickX = 0;
+        let joystickY = 0;
+
+        // Auto-detectar pantalla táctil para el Joystick
+        if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
+            joystickZone.style.display = 'none';
+        }
+
+        joystickZone.addEventListener('touchstart', (e) => {
+            isJoystickActive = true;
+            moveJoystick(e.touches[0]);
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (!isJoystickActive) return;
+            // Buscar el toque que pertenece a nuestra zona de control
+            for(let i=0; i<e.touches.length; i++) {
+                const r = joystickZone.getBoundingClientRect();
+                if(e.touches[i].clientX >= r.left - 50 && e.touches[i].clientX <= r.right + 50) {
+                    moveJoystick(e.touches[i]);
+                    break;
+                }
+            }
+        });
+
+        window.addEventListener('touchend', () => {
+            isJoystickActive = false;
+            joystickX = 0;
+            joystickY = 0;
+            joystickKnob.style.transform = `translate(0px, 0px)`;
+        });
+
+        function moveJoystick(touch) {
+            const rect = joystickZone.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            
+            let dx = touch.clientX - cx;
+            let dy = touch.clientY - cy;
+            const dist = Math.hypot(dx, dy);
+            const maxDist = 40;
+
+            if (dist > maxDist) {
+                dx = (dx / dist) * maxDist;
+                dy = (dy / dist) * maxDist;
+            }
+
+            joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            joystickX = dx / maxDist;
+            joystickY = dy / maxDist;
+        }
+
+        // Dibujar Tripulante Realista con sombras e iluminación 2.5D
+        function drawCrewmate(x, y, color, shadowColor, vx, vy) {
+            ctx.save();
+            
+            // Efecto sutil de inclinación al correr
+            if (Math.abs(vx) > 0.1) {
+                ctx.translate(x, y);
+                ctx.rotate(vx * 0.05);
+                ctx.translate(-x, -y);
+            }
+
+            // Sombra proyectada en el suelo
+            ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+            ctx.beginPath();
+            ctx.ellipse(x, y + 22, 18, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mochila de oxígeno trasera
+            ctx.fillStyle = shadowColor;
+            ctx.fillRect(x - 26, y - 10, 10, 26);
+            ctx.fillStyle = color;
+            ctx.fillRect(x - 24, y - 8, 8, 22);
+
+            // Piernas animadas dinámicamente si se mueve
+            let legOffset = (isJoystickActive || Object.keys(keys).some(k => keys[k])) ? Math.sin(Date.now() * 0.015) * 6 : 0;
+            ctx.fillStyle = shadowColor;
+            ctx.fillRect(x - 14, y + 16, 9, 8 + legOffset);
+            ctx.fillRect(x + 3, y + 16, 9, 8 - legOffset);
+            ctx.fillStyle = color;
+            ctx.fillRect(x - 12, y + 16, 7, 6 + legOffset);
+            ctx.fillRect(x + 5, y + 16, 7, 6 - legOffset);
+
+            // Traje Principal (Cuerpo)
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y - 4, 18, Math.PI, 0, false);
+            ctx.lineTo(x + 18, y + 16);
+            ctx.lineTo(x - 18, y + 16);
+            ctx.closePath();
+            ctx.fill();
+
+            // Sombra interior del cuerpo para realismo 3D
+            ctx.fillStyle = shadowColor;
+            ctx.beginPath();
+            ctx.arc(x, y - 4, 18, Math.PI * 0.25, Math.PI * 0.75, false);
+            ctx.lineTo(x - 18, y + 16);
+            ctx.lineTo(x + 18, y + 16);
+            ctx.closePath();
+            ctx.fill();
+
+            // Visor (Cristal Reflejante)
+            ctx.fillStyle = "#111"; // Borde del visor
+            ctx.beginPath();
+            ctx.roundRect(x - 2, y - 12, 22, 14, 6);
+            ctx.fill();
+
+            // Relleno degradado azul del visor
+            let visorGrad = ctx.createLinearGradient(x, y - 10, x, y + 2);
+            visorGrad.addColorStop(0, "#cbdff2");
+            visorGrad.addColorStop(0.4, "#6baecf");
+            visorGrad.addColorStop(1, "#2b5674");
+            ctx.fillStyle = visorGrad;
+            ctx.beginPath();
+            ctx.roundRect(x - 1, y - 11, 20, 12, 5);
+            ctx.fill();
+
+            // Brillo blanco reflectivo del casco
+            ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.beginPath();
+            ctx.roundRect(x + 3, y - 9, 10, 3, 1.5);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function update() {
+            if (gameOver || gameWon) return;
+
+            let moveX = 0;
+            let moveY = 0;
+
+            // Procesar entradas de teclado
+            if (keys["arrowup"] || keys["w"]) moveY = -1;
+            if (keys["arrowdown"] || keys["s"]) moveY = 1;
+            if (keys["arrowleft"] || keys["a"]) moveX = -1;
+            if (keys["arrowright"] || keys["d"]) moveX = 1;
+
+            // Procesar entradas de Joystick
+            if (isJoystickActive) {
+                moveX = joystickX;
+                moveY = joystickY;
+            }
+
+            // Aplicar velocidad
+            player.x += moveX * player.speed;
+            player.y += moveY * player.speed;
+
+            // Mantener al jugador dentro de la pantalla
+            if (player.x < player.radius) player.x = player.radius;
+            if (player.x > canvas.width - player.radius) player.x = canvas.width - player.radius;
+            if (player.y < player.radius) player.y = player.radius;
+            if (player.y > canvas.height - player.radius) player.y = canvas.height - player.radius;
+
+            // IA Avanzada del Impostor: Calcula ruta directa e incrementa velocidad gradualmente
+            const dx = player.x - impostor.x;
+            const dy = player.y - impostor.y;
+            const distToPlayer = Math.hypot(dx, dy);
+
+            if (distToPlayer > 0) {
+                impostor.x += (dx / distToPlayer) * impostor.speed;
+                impostor.y += (dy / distToPlayer) * impostor.speed;
+            }
+
+            // Colisión Crítica (Derrota)
+            if (distToPlayer < (player.radius + impostor.radius - 5)) {
+                gameOver = true;
+                statusEl.textContent = "¡EL IMPOSTOR TE ASESINÓ!";
+                statusEl.style.color = "#ff1744";
+                resetBtn.style.display = "block";
+            }
+
+            // Lógica de interacción con Tareas
+            tasks.forEach(task => {
+                if (task.active) {
+                    const distToTask = Math.hypot(player.x - task.x, player.y - task.y);
+                    if (distToTask < player.radius + 18) {
+                        task.active = false;
+                        tasksCompleted++;
+                        taskCountEl.textContent = tasksCompleted;
+                        impostor.speed += 0.45; // Sube la dificultad por cada consola reparada
+
+                        if (tasksCompleted === tasks.length) {
+                            gameWon = true;
+                            statusEl.textContent = "¡VICTORIA! Nave totalmente reparada.";
+                            statusEl.style.color = "#00ffcc";
+                            resetBtn.style.display = "block";
+                        }
+                    }
+                }
+            });
+        }
+
+        function render() {
+            // Fondo Espacial profundo
+            ctx.fillStyle = "#04060a";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Estrellas titilantes
+            stars.forEach(star => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness * (0.6 + Math.sin(Date.now() * 0.005 + star.x) * 0.4)})`;
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+
+            // Dibujar estructura estructural de las habitaciones (Paredes de la nave The Skeld)
+            rooms.forEach(room => {
+                // Sombra exterior de la sala
+                ctx.shadowColor = "rgba(0,0,0,0.5)";
+                ctx.shadowBlur = 15;
+                
+                // Suelo de la habitación
+                ctx.fillStyle = room.color;
+                ctx.fillRect(room.x, room.y, room.w, room.h);
+                ctx.shadowBlur = 0; // Reset de sombra
+
+                // Bordes de alta tecnología (Paredes)
+                ctx.strokeStyle = "#2d3d5a";
+                ctx.lineWidth = 4;
+                ctx.strokeRect(room.x, room.y, room.w, room.h);
+
+                // Nombre en el suelo de la sala
+                ctx.fillStyle = "rgba(255,255,255,0.15)";
+                ctx.font = "bold 13px 'Segoe UI'";
+                ctx.textAlign = "center";
+                ctx.fillText(room.name.toUpperCase(), room.x + room.w/2, room.y + room.h/2);
+            });
+
+            // Dibujar Consolas de Tareas Tecnológicas
+            tasks.forEach(task => {
+                if (task.active) {
+                    // Aura brillante de la consola
+                    ctx.save();
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = "#ffeb3b";
+                    
+                    // Caja de la consola
+                    ctx.fillStyle = "#1e2417";
+                    ctx.fillRect(task.x - 14, task.y - 14, 28, 28);
+                    ctx.strokeStyle = "#ffd54f";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(task.x - 14, task.y - 14, 28, 28);
+
+                    // Pantalla brillante amarilla
+                    ctx.fillStyle = "#ffeb3b";
+                    ctx.fillRect(task.x - 8, task.y - 8, 16, 12);
+                    
+                    // Icono de exclamación interactivo
+                    ctx.fillStyle = "#000";
+                    ctx.font = "bold 11px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.fillText("!", task.x, task.y + 2);
+                    ctx.restore();
+                }
+            });
+
+            // Determinar la dirección de movimiento para el sprite de los personajes
+            let playerVx = isJoystickActive ? joystickX : (keys["arrowleft"]||keys["a"] ? -1 : keys["arrowright"]||keys["d"] ? 1 : 0);
+            let impostorVx = (player.x > impostor.x) ? 1 : -1;
+
+            // Dibujar personajes hiperrealistas
+            drawCrewmate(player.x, player.y, player.color, player.shadowColor, playerVx, 0);
+            drawCrewmate(impostor.x, impostor.y, impostor.color, impostor.shadowColor, impostorVx, 0);
+        }
+
+        function loop() {
+            update();
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        function resetGame() {
+            tasksCompleted = 0;
+            gameOver = false;
+            gameWon = false;
+            player.x = 120;
+            player.y = 300;
+            impostor.x = 840;
+            impostor.y = 300;
+            impostor.speed = 2.5;
+            tasks.forEach(t => t.active = true);
+            taskCountEl.textContent = "0";
+            statusEl.textContent = "¡Repara la nave!";
+            statusEl.style.color = "#00ffcc";
+            resetBtn.style.display = "none";
+        }
+
+        // Función de descarga automatizada en 1 Click
+        function downloadGame() {
+            const sourceCode = document.documentElement.outerHTML;
+            const blob = new Blob([sourceCode], { type: "text/html" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "index.html";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        loop();
+    </script>
+</body>
+</html>
